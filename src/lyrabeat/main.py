@@ -11,7 +11,7 @@ def run(config_path: str):
         config = yaml.safe_load(f)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    device = torch.device('meta')
+    device = torch.device('cpu')
     config['device'] = device
 
     dataset_path = config["dataset path"]

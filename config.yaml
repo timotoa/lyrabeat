@@ -14,9 +14,9 @@ train epochs: 50
 batch size: 1
 
 # model hyper-parameters
-encoder: [96, 64]
+encoder: [64, 16]
 encoder_kernel_size: 3
 ff_hidden_size: 128
 attention_limit: 128
-transformer_layer_count: 20
+transformer_layer_count: 2
 

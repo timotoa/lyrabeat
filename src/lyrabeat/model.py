@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 from torch import nn
+import math
 
 
 class LocalAttention(nn.Module):
@@ -14,43 +15,18 @@ class LocalAttention(nn.Module):
         self.value = nn.Linear(embed_size, embed_size)
 
     def forward(self, x):
-        query = self.query(x)
-        keys = self.key(x)
-        values = self.value(x)
         pad = self.attention_limit
-        padded_keys = F.pad(keys, (0, 0, pad, pad))
-        padded_values = F.pad(values, (0, 0, pad, pad))
-        local_keys = padded_keys.unfold(1, 2 * pad + 1, 1)
-        local_values = padded_values.unfold(1, 2 * pad + 1, 1)
-        print(local_keys.size(), local_values.size())
-        energy = torch.matmul(
-            query.unsqueeze(2),
-            local_keys.transpose(-2, -1)
-        ).squeeze(2)
+        extended = F.pad(x, (0, 0, pad, pad))
+        query = self.query(x)
+        keys = self.key(extended).unfold(1, 2 * pad + 1, 1)
+        values = self.value(extended).unfold(1, 2 * pad + 1, 1)
+
+        energy = torch.matmul(query.unsqueeze(2), keys)
+        energy /= self.embed_size ** 0.5
+
         attention = torch.softmax(energy, dim=-1)
-        out = torch.matmul(attention.unsqueeze(2), local_values).squeeze(2)
+        out = torch.matmul(attention, values.transpose(3, 2)).squeeze(2)
         return out
-
-# class LocalAttention(nn.Module):
-#     def __init__(self, embed_size: int):
-#         super().__init__()
-#         self.embed_size = embed_size
-#         self.query = nn.Linear(embed_size, embed_size)
-#         self.key = nn.Linear(embed_size, embed_size)
-#         self.value = nn.Linear(embed_size, embed_size)
-#         self.softmax = nn.Softmax(dim=-1)
-
-#     def forward(self, x):
-
-#         Q = self.query(x)
-#         K = self.key(x)
-#         V = self.value(x)
-
-#         scaled = self.embed_size ** 0.5
-#         scores = torch.matmul(Q, K.transpose(-2, -1)) / scaled
-#         attention = self.softmax(scores)
-#         out = torch.matmul(attention, V)
-#         return out
 
 
 class FeedForward(nn.Module):
@@ -66,15 +42,34 @@ class FeedForward(nn.Module):
         return self.layers(x)
 
 
+class RoPE(nn.Module):
+    def __init__(self, embed_size: int):
+        super().__init__()
+        self.embed_size = embed_size
+
+    def forward(self, x, seq_len):
+        position = torch.arange(seq_len, device=x.device).unsqueeze(1)
+        div_term = torch.arange(0, self.embed_size, 2, device=x.device)
+        div_term = torch.exp(div_term * -(math.log(10000.0) / self.embed_size))
+
+        pe = torch.zeros(seq_len, self.embed_size, device=x.device)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)
+        return x + pe
+
+
 class TransformerLayer(nn.Module):
     def __init__(self, embed_size: int, ff_hidden_size: int, attention_limit: int, **kwargs):
         super().__init__()
-        self.attention = LocalAttention(embed_size)
+        self.attention = LocalAttention(embed_size, attention_limit)
         self.feedforward = FeedForward(embed_size, ff_hidden_size)
         self.norm1 = nn.LayerNorm(embed_size)
         self.norm2 = nn.LayerNorm(embed_size)
+        self.rope = RoPE(embed_size)
 
     def forward(self, x):
+        x = self.rope(x, x.size(1))
         attention_out = self.attention(x)
         x = self.norm1(attention_out + x)
         ff_out = self.feedforward(x)

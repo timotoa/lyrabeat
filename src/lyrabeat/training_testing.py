@@ -37,8 +37,13 @@ def train_network(
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            # flops, params = profile(model, inputs=(spectrogram,))
+            # print(flops, params)
+            # print(f"Flops: {flops / 1e9:.2f} billion operations")
 
         lr = optimizer.param_groups[0]['lr']
+        error = test_network(model, criterion, test_loader, config)
+        print(f'      current error: {error:.4f}, lr: {lr}\n')
         # result, error = test_network(
         # model, test_loader, config, desc='      Testing Network'
         # )
@@ -49,3 +54,20 @@ def train_network(
         #     )
         #     write_file(prediction, config)
     return model, optimizer
+
+
+def test_network(model: nn.Module, criterion: nn.Module, dataloader: DataLoader, config: dict):
+    model.eval()
+    total = 0
+    time_now = datetime.datetime.now()
+    time_now = time_now.strftime("%H:%M")
+    desc = f'{time_now} Testing Network'
+    for i, (spectrogram, target) in tqdm(
+        enumerate(dataloader), desc=f"{desc:<25}",
+        ncols=80, total=len(dataloader)
+    ):
+        outputs = model(spectrogram)
+        loss = criterion(outputs.squeeze(1), target)
+        total += loss.sum()
+    model.train()
+    return total / len(dataloader.dataset)

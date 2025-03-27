@@ -32,9 +32,9 @@ class AudioDataset(Dataset):
         dataset_files = set(os.listdir(dataset_path))
         annotations_files = set(os.listdir(annotations_path))
         i = 0
-        for file in tqdm(dataset_files):
+        for file in tqdm(dataset_files, ncols=80, desc="Load Data "):
             i += 1
-            if i > 3:
+            if i > 4:
                 break
             annotation_file = file[:-4]+".txt"
             if not file.endswith(".mp3") or annotation_file not in annotations_files:
@@ -89,13 +89,3 @@ def get_dataloaders(dataset: Dataset, config: dict) -> tuple[DataLoader]:
     )
 
     return train_loader, test_loader
-
-# config = {
-#     'n_fft': 512,
-#     'hop_length': 256,
-#     'n_mels': 128,
-# }
-# dataset_path = 'dataset_small'
-# annotations_path = 'annotations'
-# dataset = AudioDataset(dataset_path, annotations_path, config)
-# dataset[0]

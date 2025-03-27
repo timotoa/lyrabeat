@@ -20,7 +20,8 @@ dependencies = [
   'PyYAML',
   'tqdm',
   'torch',
-  'torchaudio'
+  'torchaudio',
+  'numpy'
 ]
 
 # [project.urls]
