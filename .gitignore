@@ -1,0 +1,6 @@
+annotations/*
+dataset/*
+dataset_small/*
+
+testing.ipynb
+web_scraper.ipynb
