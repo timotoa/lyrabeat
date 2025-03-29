@@ -30,13 +30,10 @@ class AudioDataset(Dataset):
         self.device = config['device']
         self.annotations = []
         self.dataset = []
-        dataset_files = set(os.listdir(dataset_path))
+        dataset_files = os.listdir(dataset_path)[:config['debug dataset size']]
+        dataset_files = set(dataset_files)
         annotations_files = set(os.listdir(annotations_path))
-        i = 0
         for file in tqdm(dataset_files, ncols=80, desc="Load Data "):
-            i += 1
-            if i > config['debug dataset size']:
-                break
             annotation_file = file[:-4]+".txt"
             if not file.endswith(".mp3") or annotation_file not in annotations_files:
                 continue
