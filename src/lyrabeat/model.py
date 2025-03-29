@@ -14,18 +14,22 @@ class LocalAttention(nn.Module):
         self.key = nn.Linear(embed_size, embed_size)
         self.value = nn.Linear(embed_size, embed_size)
 
-    def forward(self, x):
+    def forward(self, x, mask):
         pad = self.attention_limit
         extended = F.pad(x, (0, 0, pad, pad))
+        pre_mask = F.pad(mask, (0, 0, pad, pad), value=1)
+        pre_mask = pre_mask.unfold(1, 2*pad + 1, 1)
         query = self.query(x)
-        keys = self.key(extended).unfold(1, 2 * pad + 1, 1)
-        values = self.value(extended).unfold(1, 2 * pad + 1, 1)
+        keys = self.key(extended).unfold(1, 2*pad + 1, 1)
+        values = self.value(extended).unfold(1, 2*pad + 1, 1)
 
         energy = torch.matmul(query.unsqueeze(2), keys)
         energy /= self.embed_size ** 0.5
+        energy = energy.masked_fill(pre_mask == 0, -1e9)
 
         attention = torch.softmax(energy, dim=-1)
         out = torch.matmul(attention, values.transpose(3, 2)).squeeze(2)
+        out = out.masked_fill(mask == 0, 0)
         return out
 
 
@@ -68,13 +72,31 @@ class TransformerLayer(nn.Module):
         self.norm2 = nn.LayerNorm(embed_size)
         self.rope = RoPE(embed_size)
 
-    def forward(self, x):
+    def forward(self, x, mask):
         x = self.rope(x, x.size(1))
-        attention_out = self.attention(x)
+        attention_out = self.attention(x, mask)
         x = self.norm1(attention_out + x)
         ff_out = self.feedforward(x)
         out = self.norm2(ff_out + x)
         return out
+
+
+class EncoderLayer(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: int):
+        super().__init__()
+        self.conv = nn.Conv1d(
+            in_channels, out_channels, kernel_size, padding=kernel_size//2
+        )
+        self.relu = nn.ReLU()
+        self.pool = nn.MaxPool1d(2)
+
+    def forward(self, x, mask):
+        x = self.conv(x)
+        x = x.masked_fill(mask == 0, 0)
+        x = self.relu(x)
+        x = self.pool(x)
+        mask = self.pool(mask)
+        return x, mask
 
 
 class Encoder(nn.Module):
@@ -82,19 +104,17 @@ class Encoder(nn.Module):
         super().__init__()
         in_channels = config["n_mels"]
         kernel_size = config["encoder_kernel_size"]
-        layers = []
 
+        self.layers = nn.ModuleList([])
         for out_channels in config["encoder"]:
-            layers.append(nn.Conv1d(
-                in_channels, out_channels, kernel_size, padding=kernel_size//2
-            ))
-            layers.append(nn.ReLU())
-            layers.append(nn.MaxPool1d(2))
+            layer = EncoderLayer(in_channels, out_channels, kernel_size)
+            self.layers.append(layer)
             in_channels = out_channels
-        self.encoder = nn.Sequential(*layers)
 
-    def forward(self, x):
-        return self.encoder(x)
+    def forward(self, x, mask):
+        for layer in self.layers:
+            x, mask = layer(x, mask)
+        return x, mask
 
 
 class Decoder(nn.Module):
@@ -117,20 +137,26 @@ class Decoder(nn.Module):
 class AudioTransformer(nn.Module):
     def __init__(self, config: dict):
         super().__init__()
+        self.projection = 2 ** len(config["encoder"])
         self.encoder = Encoder(config)
 
-        layers = []
+        self.transformer = nn.ModuleList([])
         embed_size = config["encoder"][-1]
         for i in range(config["transformer_layer_count"]):
             layer = TransformerLayer(embed_size, **config)
-            layers.append(layer)
-        self.transformer = nn.Sequential(*layers)
+            self.transformer.append(layer)
         self.decoder = Decoder(config["encoder"])
 
-    def forward(self, x):
-        x = self.encoder(x)
+    def forward(self, x, mask):
         x = x.transpose(1, 2)
-        x = self.transformer(x)
+        mask = mask.transpose(1, 2)
+        x, mask = self.encoder(x, mask)
+
+        x = x.transpose(1, 2)
+        mask = mask.transpose(1, 2)
+        for layer in self.transformer:
+            x = layer(x, mask)
         x = x.transpose(1, 2)
         x = self.decoder(x)
+        x = x.transpose(1, 2)
         return x

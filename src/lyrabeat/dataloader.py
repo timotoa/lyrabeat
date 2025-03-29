@@ -4,6 +4,7 @@ import torchaudio
 import glob
 import os
 from torch.utils.data import Dataset, DataLoader, random_split
+from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import torchaudio.transforms as T
@@ -33,9 +34,9 @@ class AudioDataset(Dataset):
         annotations_files = set(os.listdir(annotations_path))
         i = 0
         for file in tqdm(dataset_files, ncols=80, desc="Load Data "):
-            i += 1
-            if i > 4:
-                break
+            # i += 1
+            # if i > 6:
+            #     break
             annotation_file = file[:-4]+".txt"
             if not file.endswith(".mp3") or annotation_file not in annotations_files:
                 continue
@@ -48,7 +49,7 @@ class AudioDataset(Dataset):
             pad_size = (-spectrogram.size(1)) % projection
             spectrogram = torch.nn.functional.pad(spectrogram, (0, pad_size))
 
-            self.dataset.append(spectrogram)
+            self.dataset.append(spectrogram.T)
 
             with open(os.path.join(annotations_path, annotation_file), 'r') as f:
                 annotation_content = f.read()
@@ -59,7 +60,7 @@ class AudioDataset(Dataset):
                 beat = int(beat*sr // config['hop_length'])
                 if beat < annotation.size(0):
                     annotation[beat] = 1
-            self.annotations.append(annotation)
+            self.annotations.append(annotation.unsqueeze(1))
 
     def __len__(self) -> int:
         return len(self.dataset)
@@ -68,6 +69,17 @@ class AudioDataset(Dataset):
         annotation = self.annotations[idx]
         spectrogram = self.dataset[idx]
         return spectrogram.to(self.device), annotation.to(self.device)
+
+
+def collate_fn(batch):
+    spectrogram, annotation = zip(*batch)
+    spectrogram = pad_sequence(spectrogram, batch_first=True)
+    annotation = pad_sequence(annotation, batch_first=True)
+    lengths = [len(seq) for seq, _ in batch]
+    mask = torch.zeros(spectrogram.size()[:-1]).unsqueeze(-1)
+    for i, length in enumerate(lengths):
+        mask[i, :length] = 1
+    return spectrogram, annotation, mask
 
 
 def get_dataloaders(dataset: Dataset, config: dict) -> tuple[DataLoader]:
@@ -82,10 +94,10 @@ def get_dataloaders(dataset: Dataset, config: dict) -> tuple[DataLoader]:
     )
 
     train_loader = DataLoader(
-        train_dataset, batch_size, shuffle=True
+        train_dataset, batch_size, shuffle=True, collate_fn=collate_fn
     )
     test_loader = DataLoader(
-        test_dataset, batch_size, shuffle=False
+        test_dataset, batch_size, shuffle=False, collate_fn=collate_fn
     )
 
     return train_loader, test_loader

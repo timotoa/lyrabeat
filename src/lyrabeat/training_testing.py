@@ -27,12 +27,12 @@ def train_network(
         time_now = datetime.datetime.now()
         time_now = time_now.strftime("%H:%M")
         desc = f'{time_now} Starting Epoch {epoch:>3}'
-        for i, (spectrogram, target) in tqdm(
+        for i, (spectrogram, target, mask) in tqdm(
             enumerate(train_loader), desc=f'{desc:<25}',
             ncols=80, total=len(train_loader)
         ):
-            outputs = model(spectrogram)
-            loss = criterion(outputs.squeeze(1), target)
+            outputs = model(spectrogram, mask)
+            loss = criterion(outputs, target)
 
             optimizer.zero_grad()
             loss.backward()
@@ -62,12 +62,12 @@ def test_network(model: nn.Module, criterion: nn.Module, dataloader: DataLoader,
     time_now = datetime.datetime.now()
     time_now = time_now.strftime("%H:%M")
     desc = f'{time_now} Testing Network'
-    for i, (spectrogram, target) in tqdm(
+    for i, (spectrogram, target, mask) in tqdm(
         enumerate(dataloader), desc=f"{desc:<25}",
         ncols=80, total=len(dataloader)
     ):
-        outputs = model(spectrogram)
-        loss = criterion(outputs.squeeze(1), target)
+        outputs = model(spectrogram, mask)
+        loss = criterion(outputs, target)
         total += loss.sum()
     model.train()
     return total / len(dataloader.dataset)

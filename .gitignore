@@ -9,3 +9,4 @@ __pycache__/*
 
 testing.ipynb
 web_scraper.ipynb
+.DS_Store

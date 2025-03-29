@@ -6,12 +6,12 @@ from .training_testing import train_network
 from .model import AudioTransformer
 
 
-def run(config_path: str):
+def train(config_path: str):
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    device = torch.device('cpu')
+    # device = torch.device('meta')
     config['device'] = device
 
     dataset_path = config["dataset path"]
@@ -35,7 +35,10 @@ def run(config_path: str):
 
 def main():
     config_path = 'config.yaml'
-    run(config_path)
+    train(config_path)
+    # try:
+    # except:
+    #     print('error occured')
 
 
 if __name__ == '__main__':
