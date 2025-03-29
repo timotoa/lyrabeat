@@ -1,6 +1,7 @@
 # dataset
 dataset path: 'dataset_small'
 annotations path: 'annotations'
+datasize: 500
 
 # spectrogram
 n_fft: 512

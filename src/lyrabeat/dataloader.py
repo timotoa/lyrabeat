@@ -1,3 +1,4 @@
+import random
 import numpy as np
 import torch
 import torchaudio
@@ -30,6 +31,7 @@ class AudioDataset(Dataset):
         self.device = config['device']
         self.annotations = []
         self.dataset = []
+        self.length = config['datasize']
         dataset_files = os.listdir(dataset_path)[:config['debug dataset size']]
         dataset_files = set(dataset_files)
         annotations_files = set(os.listdir(annotations_path))
@@ -39,6 +41,7 @@ class AudioDataset(Dataset):
                 continue
 
             waveform, sr = torchaudio.load(os.path.join(dataset_path, file))
+            waveform = waveform / waveform.abs().max()
             spectrogram = log_spectrogram(waveform, sr, **config)
             spectrogram = spectrogram.mean(dim=0)
 
@@ -65,6 +68,9 @@ class AudioDataset(Dataset):
     def __getitem__(self, idx: int):
         annotation = self.annotations[idx]
         spectrogram = self.dataset[idx]
+        start = random.randint(0, spectrogram.size(0))
+        annotation = annotation[start:start+self.length, :]
+        spectrogram = spectrogram[start:start+self.length, :]
         return spectrogram.to(self.device), annotation.to(self.device)
 
 
