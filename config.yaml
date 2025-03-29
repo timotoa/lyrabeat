@@ -20,3 +20,5 @@ ff_hidden_size: 128
 attention_limit: 128
 transformer_layer_count: 2
 
+debug dataset size: 6
+

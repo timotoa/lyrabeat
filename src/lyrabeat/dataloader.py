@@ -34,9 +34,9 @@ class AudioDataset(Dataset):
         annotations_files = set(os.listdir(annotations_path))
         i = 0
         for file in tqdm(dataset_files, ncols=80, desc="Load Data "):
-            # i += 1
-            # if i > 6:
-            #     break
+            i += 1
+            if i > config['debug dataset size']:
+                break
             annotation_file = file[:-4]+".txt"
             if not file.endswith(".mp3") or annotation_file not in annotations_files:
                 continue
@@ -77,6 +77,7 @@ def collate_fn(batch):
     annotation = pad_sequence(annotation, batch_first=True)
     lengths = [len(seq) for seq, _ in batch]
     mask = torch.zeros(spectrogram.size()[:-1]).unsqueeze(-1)
+    mask = mask.to(spectrogram.device)
     for i, length in enumerate(lengths):
         mask[i, :length] = 1
     return spectrogram, annotation, mask
