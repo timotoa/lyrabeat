@@ -21,7 +21,8 @@ def train_network(
     print(f"Number of trainable parameters: {num_params:,}")
 
     model.train()
-    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor(10.0))
+    criterion = nn.BCEWithLogitsLoss(
+        pos_weight=torch.tensor(config['penalty']))
 
     num_epoch = config['train epochs']
     for epoch in range(1, num_epoch+1):
@@ -72,8 +73,8 @@ def test_network(model: nn.Module, criterion: nn.Module, dataloader: DataLoader,
         total += loss.sum()
     if config["plot"]:
         outputs = outputs[0, :, 0].detach().cpu().numpy()
-        outputs[outputs > 0.5] = 1
-        outputs[outputs <= 0.5] = 0
+        outputs[outputs > 0] = 1
+        outputs[outputs <= 0] = 0
         targets = targets[0, :, 0].detach().cpu().numpy()
         errors = (outputs != targets).astype(int)
 
