@@ -13,8 +13,10 @@ train split: 0.5
 learning rate: 0.0001
 train epochs: 50
 batch size: 16
+plot: True
 
 # model hyper-parameters
+embed_size: 128
 encoder: [64, 16]
 encoder_kernel_size: 3
 ff_hidden_size: 128
@@ -22,4 +24,3 @@ attention_limit: 128
 transformer_layer_count: 2
 
 debug dataset size: 6
-

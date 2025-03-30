@@ -9,6 +9,7 @@ from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import torchaudio.transforms as T
+import torch.nn.functional as F
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -29,9 +30,10 @@ class AudioDataset(Dataset):
     def __init__(self, dataset_path: str, annotations_path: str, config: dict):
         self.config = config
         self.device = config['device']
+        self.length = config['datasize']
+
         self.annotations = []
         self.dataset = []
-        self.length = config['datasize']
         dataset_files = os.listdir(dataset_path)[:config['debug dataset size']]
         dataset_files = set(dataset_files)
         annotations_files = set(os.listdir(annotations_path))
@@ -44,46 +46,37 @@ class AudioDataset(Dataset):
             waveform = waveform / waveform.abs().max()
             spectrogram = log_spectrogram(waveform, sr, **config)
             spectrogram = spectrogram.mean(dim=0)
-
-            projection = 2 ** len(config["encoder"])
-            pad_size = (-spectrogram.size(1)) % projection
-            spectrogram = torch.nn.functional.pad(spectrogram, (0, pad_size))
-
             self.dataset.append(spectrogram.T)
 
             with open(os.path.join(annotations_path, annotation_file), 'r') as f:
                 annotation_content = f.read()
 
-            annotation = torch.zeros(spectrogram.size(1))
-            for line in annotation_content.split("\n")[:-1]:
+            annotation = []
+            for line in annotation_content.split("\n"):
+                if ',' not in line:
+                    break
                 beat = float(line.split(',')[0])
                 beat = int(beat*sr // config['hop_length'])
-                if beat < annotation.size(0):
-                    annotation[beat] = 1
-            self.annotations.append(annotation.unsqueeze(1))
+                annotation.append(beat)
+            self.annotations.append(annotation)
 
     def __len__(self) -> int:
         return len(self.dataset)
 
     def __getitem__(self, idx: int):
-        annotation = self.annotations[idx]
         spectrogram = self.dataset[idx]
+        length = self.length
         start = random.randint(0, spectrogram.size(0))
-        annotation = annotation[start:start+self.length, :]
-        spectrogram = spectrogram[start:start+self.length, :]
+        spectrogram = spectrogram[start:start+length, :]
+        spectrogram = F.pad(
+            spectrogram, (0, 0, 0, length - spectrogram.size(0)), value=0
+        )
+
+        annotation = torch.zeros((length, 1))
+        for beat in self.annotations[idx]:
+            if start <= beat < start+length:
+                annotation[beat-start] = 1
         return spectrogram.to(self.device), annotation.to(self.device)
-
-
-def collate_fn(batch):
-    spectrogram, annotation = zip(*batch)
-    spectrogram = pad_sequence(spectrogram, batch_first=True)
-    annotation = pad_sequence(annotation, batch_first=True)
-    lengths = [len(seq) for seq, _ in batch]
-    mask = torch.zeros(spectrogram.size()[:-1]).unsqueeze(-1)
-    mask = mask.to(spectrogram.device)
-    for i, length in enumerate(lengths):
-        mask[i, :length] = 1
-    return spectrogram, annotation, mask
 
 
 def get_dataloaders(dataset: Dataset, config: dict) -> tuple[DataLoader]:
@@ -98,10 +91,10 @@ def get_dataloaders(dataset: Dataset, config: dict) -> tuple[DataLoader]:
     )
 
     train_loader = DataLoader(
-        train_dataset, batch_size, shuffle=True, collate_fn=collate_fn
+        train_dataset, batch_size, shuffle=True
     )
     test_loader = DataLoader(
-        test_dataset, batch_size, shuffle=False, collate_fn=collate_fn
+        test_dataset, batch_size, shuffle=False
     )
 
     return train_loader, test_loader

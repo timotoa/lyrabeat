@@ -7,6 +7,7 @@ from tqdm import tqdm
 from itertools import chain
 from torch.utils.data import Dataset, DataLoader
 from torch.optim import Optimizer
+import matplotlib.pyplot as plt
 
 
 def train_network(
@@ -27,12 +28,12 @@ def train_network(
         time_now = datetime.datetime.now()
         time_now = time_now.strftime("%H:%M")
         desc = f'{time_now} Starting Epoch {epoch:>3}'
-        for i, (spectrogram, target, mask) in tqdm(
+        for i, (spectrogram, targets) in tqdm(
             enumerate(train_loader), desc=f'{desc:<25}',
             ncols=80, total=len(train_loader)
         ):
-            outputs = model(spectrogram, mask)
-            loss = criterion(outputs, target)
+            outputs = model(spectrogram)
+            loss = criterion(outputs, targets)
 
             optimizer.zero_grad()
             loss.backward()
@@ -62,12 +63,33 @@ def test_network(model: nn.Module, criterion: nn.Module, dataloader: DataLoader,
     time_now = datetime.datetime.now()
     time_now = time_now.strftime("%H:%M")
     desc = f'{time_now} Testing Network'
-    for i, (spectrogram, target, mask) in tqdm(
+    for i, (spectrogram, targets) in tqdm(
         enumerate(dataloader), desc=f"{desc:<25}",
         ncols=80, total=len(dataloader)
     ):
-        outputs = model(spectrogram, mask)
-        loss = criterion(outputs, target)
+        outputs = model(spectrogram)
+        loss = criterion(outputs, targets)
         total += loss.sum()
+    if config["plot"]:
+        outputs = outputs[0, :, 0].detach().cpu().numpy()
+        outputs[outputs > 0.5] = 1
+        outputs[outputs <= 0.5] = 0
+        targets = targets[0, :, 0].detach().cpu().numpy()
+        errors = (outputs != targets).astype(int)
+
+        plt.figure(figsize=(15, 2))
+        plt.eventplot(np.where(outputs == 1)[
+                      0], colors='orange', lineoffsets=0.9, linelengths=0.25, linewidths=0.5)
+        plt.eventplot(np.where(targets == 1)[
+                      0], colors='green', lineoffsets=0.5, linelengths=0.25, linewidths=0.5)
+        plt.eventplot(np.where(errors)[
+                      0], colors='red', lineoffsets=0.1, linelengths=0.25, linewidths=0.5)
+
+        plt.yticks([])
+        plt.yticks([])
+        plt.title(
+            'Error Positions (Red = Mismatches, Green = Target, Orange = Prediction)')
+        plt.tight_layout()
+        plt.show()
     model.train()
     return total / len(dataloader.dataset)

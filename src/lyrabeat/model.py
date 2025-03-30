@@ -33,6 +33,27 @@ class LocalAttention(nn.Module):
         return out
 
 
+class Attention(nn.Module):
+    def __init__(self, embed_size: int, attention_limit: int = 128):
+        super().__init__()
+        self.embed_size = embed_size
+        self.query = nn.Linear(embed_size, embed_size)
+        self.key = nn.Linear(embed_size, embed_size)
+        self.value = nn.Linear(embed_size, embed_size)
+
+    def forward(self, x):
+        query = self.query(x)
+        keys = self.key(x)
+        values = self.value(x)
+
+        energy = torch.matmul(query, keys.transpose(-2, -1))
+        energy /= self.embed_size ** 0.5
+
+        attention = torch.softmax(energy, dim=-1)
+        out = torch.matmul(attention, values)
+        return out
+
+
 class FeedForward(nn.Module):
     def __init__(self, embed_size: int, ff_hidden_size: int):
         super().__init__()
@@ -66,15 +87,15 @@ class RoPE(nn.Module):
 class TransformerLayer(nn.Module):
     def __init__(self, embed_size: int, ff_hidden_size: int, attention_limit: int, **kwargs):
         super().__init__()
-        self.attention = LocalAttention(embed_size, attention_limit)
+        self.attention = Attention(embed_size, attention_limit)
         self.feedforward = FeedForward(embed_size, ff_hidden_size)
         self.norm1 = nn.LayerNorm(embed_size)
         self.norm2 = nn.LayerNorm(embed_size)
         self.rope = RoPE(embed_size)
 
-    def forward(self, x, mask):
+    def forward(self, x):
         x = self.rope(x, x.size(1))
-        attention_out = self.attention(x, mask)
+        attention_out = self.attention(x)
         x = self.norm1(attention_out + x)
         ff_out = self.feedforward(x)
         out = self.norm2(ff_out + x)
@@ -137,26 +158,19 @@ class Decoder(nn.Module):
 class AudioTransformer(nn.Module):
     def __init__(self, config: dict):
         super().__init__()
-        self.projection = 2 ** len(config["encoder"])
-        self.encoder = Encoder(config)
+        mels = config["n_mels"]
+        embed_size = config["embed_size"]
+        self.encoder = nn.Linear(mels, embed_size)
+        self.decoder = nn.Linear(embed_size, 1)
 
-        self.transformer = nn.ModuleList([])
-        embed_size = config["encoder"][-1]
+        layers = []
         for i in range(config["transformer_layer_count"]):
-            layer = TransformerLayer(embed_size, **config)
-            self.transformer.append(layer)
-        self.decoder = Decoder(config["encoder"])
+            layer = TransformerLayer(**config)
+            layers.append(layer)
+        self.layers = nn.Sequential(*layers)
 
-    def forward(self, x, mask):
-        x = x.transpose(1, 2)
-        mask = mask.transpose(1, 2)
-        x, mask = self.encoder(x, mask)
-
-        x = x.transpose(1, 2)
-        mask = mask.transpose(1, 2)
-        for layer in self.transformer:
-            x = layer(x, mask)
-        x = x.transpose(1, 2)
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.layers(x)
         x = self.decoder(x)
-        x = x.transpose(1, 2)
         return x
